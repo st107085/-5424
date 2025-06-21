@@ -26,8 +26,9 @@ exports.handler = async (event) => {
     // 重建要傳遞給中央氣象署 (CWA) API 的查詢字串
     // 將所有從前端傳來的額外參數 (例如 locationName, time 等) 都加入
     const cwaQueryParams = new URLSearchParams(otherParams);
-    // 將金鑰加入到 CWA API 的查詢參數中。這是金鑰安全的地方。
-    cwaQueryParams.set('Authorization', CWA_API_KEY);
+    
+    // *** 移除此行：CWA API 金鑰不應該作為 URL 查詢參數。
+    // cwaQueryParams.set('Authorization', CWA_API_KEY); 
 
     // 構建中央氣象署的完整 API URL
     const cwaApiBaseUrl = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore';
@@ -36,9 +37,13 @@ exports.handler = async (event) => {
     console.log(`代理請求至 CWA API: ${cwaUrl}`); // 在控制台輸出代理請求的 URL
 
     try {
-        // 在伺服器端（即 Netlify Function 環境中）向中央氣象署 API 發送請求。
-        // 這個請求不受瀏覽器 CORS 政策的限制。
-        const response = await fetch(cwaUrl);
+        // *** 關鍵修改：將 API 金鑰作為 HTTP Header 傳遞。
+        // CWA API 需要 'Authorization' header，格式為 'CWA YOUR_API_KEY'
+        const response = await fetch(cwaUrl, {
+            headers: {
+                'Authorization': `CWA ${CWA_API_KEY}` // 正確設置 Authorization Header
+            }
+        });
         const data = await response.json(); // 解析 CWA API 的原始回應。
 
         // 如果 CWA API 返回的狀態碼不是成功的 (例如 404, 500 等)，
