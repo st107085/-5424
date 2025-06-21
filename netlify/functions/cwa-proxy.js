@@ -6,6 +6,19 @@ exports.handler = async (event) => {
     // 請務必在 Netlify 專案設定中設定名為 CWA_API_KEY 的環境變數！
     const CWA_API_KEY = process.env.CWA_API_KEY;
 
+    // *** 新增日誌：打印遮罩後的 CWA_API_KEY，用於偵錯。
+    // 這可以幫助我們確認函數是否正確讀取了環境變數。
+    if (CWA_API_KEY) {
+        console.log(`CWA_API_KEY (masked for security): ${CWA_API_KEY.substring(0, 5)}... (length: ${CWA_API_KEY.length})`);
+    } else {
+        console.error("Error: CWA_API_KEY environment variable is not set or is empty.");
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: "Serverless Function Internal Error: CWA_API_KEY not set." }),
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        };
+    }
+
     // 從前端請求的查詢參數中，獲取 datasetId 和所有其他參數。
     // 範例前端請求：/api/cwa-proxy?datasetId=F-C0032-001&locationName=臺北
     const { datasetId, ...otherParams } = event.queryStringParameters;
@@ -17,6 +30,7 @@ exports.handler = async (event) => {
             body: JSON.stringify({ error: "Missing datasetId in query parameters." }),
             headers: {
                 "Content-Type": "application/json",
+                // 允許所有來源進行 CORS 訪問，因為這是代理函數。
                 "Access-Control-Allow-Origin": "*",
             },
         };
@@ -39,12 +53,12 @@ exports.handler = async (event) => {
             }
         });
 
-        // *** 新增日誌：記錄 CWA API 回應的狀態碼和狀態文字
+        // 記錄 CWA API 回應的狀態碼和狀態文字
         console.log(`CWA API Response Status for ${datasetId}: ${response.status} - ${response.statusText}`);
 
-        // *** 關鍵新增：先獲取原始文字回應，以防 JSON 解析失敗
+        // 關鍵新增：先獲取原始文字回應，以防 JSON 解析失敗
         const rawResponseText = await response.text();
-        // *** 新增日誌：記錄 CWA API 返回的原始回應，這有助於診斷非 JSON 錯誤
+        // 記錄 CWA API 返回的原始回應，這有助於診斷非 JSON 錯誤
         console.log(`CWA API Raw Response (first 500 chars) for ${datasetId}: ${rawResponseText.substring(0, 500)}`);
 
         let data;
