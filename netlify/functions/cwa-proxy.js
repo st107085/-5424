@@ -17,7 +17,6 @@ exports.handler = async (event) => {
             body: JSON.stringify({ error: "Missing datasetId in query parameters." }),
             headers: {
                 "Content-Type": "application/json",
-                // 允許所有來源進行 CORS 訪問，因為這是代理函數。
                 "Access-Control-Allow-Origin": "*",
             },
         };
@@ -27,9 +26,6 @@ exports.handler = async (event) => {
     // 將所有從前端傳來的額外參數 (例如 locationName, time 等) 都加入
     const cwaQueryParams = new URLSearchParams(otherParams);
     
-    // *** 移除此行：CWA API 金鑰不應該作為 URL 查詢參數。
-    // cwaQueryParams.set('Authorization', CWA_API_KEY); 
-
     // 構建中央氣象署的完整 API URL
     const cwaApiBaseUrl = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore';
     const cwaUrl = `${cwaApiBaseUrl}/${datasetId}?${cwaQueryParams.toString()}`;
@@ -37,19 +33,47 @@ exports.handler = async (event) => {
     console.log(`代理請求至 CWA API: ${cwaUrl}`); // 在控制台輸出代理請求的 URL
 
     try {
-        // *** 關鍵修改：將 API 金鑰作為 HTTP Header 傳遞。
-        // CWA API 需要 'Authorization' header，格式為 'CWA YOUR_API_KEY'
         const response = await fetch(cwaUrl, {
             headers: {
                 'Authorization': `CWA ${CWA_API_KEY}` // 正確設置 Authorization Header
             }
         });
-        const data = await response.json(); // 解析 CWA API 的原始回應。
+
+        // *** 新增日誌：記錄 CWA API 回應的狀態碼和狀態文字
+        console.log(`CWA API Response Status for ${datasetId}: ${response.status} - ${response.statusText}`);
+
+        // *** 關鍵新增：先獲取原始文字回應，以防 JSON 解析失敗
+        const rawResponseText = await response.text();
+        // *** 新增日誌：記錄 CWA API 返回的原始回應，這有助於診斷非 JSON 錯誤
+        console.log(`CWA API Raw Response (first 500 chars) for ${datasetId}: ${rawResponseText.substring(0, 500)}`);
+
+        let data;
+        try {
+            // 嘗試解析為 JSON
+            data = JSON.parse(rawResponseText);
+        } catch (jsonParseError) {
+            // 如果 JSON 解析失敗，這表示 CWA API 返回的不是有效的 JSON
+            console.error(`Error parsing JSON from CWA API for dataset ${datasetId}:`, jsonParseError);
+            console.error(`Full raw response that failed JSON parsing:`, rawResponseText); // 記錄完整的原始回應
+
+            return {
+                statusCode: 500, // Internal Server Error
+                headers: {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*",
+                },
+                body: JSON.stringify({
+                    error: `Serverless Function Internal Error: Failed to parse CWA API response as JSON. Original error: ${jsonParseError.message}`,
+                    raw_cwa_response_snippet: rawResponseText.substring(0, 200) + '...', // 提供部分原始回應
+                    datasetId: datasetId
+                }),
+            };
+        }
 
         // 如果 CWA API 返回的狀態碼不是成功的 (例如 404, 500 等)，
         // 則將 CWA 的錯誤訊息和狀態碼轉發回前端。
         if (!response.ok) {
-            console.error(`Error from CWA API for dataset ${datasetId}: ${response.status} - ${data.message || 'Unknown error'}`);
+            console.error(`Error from CWA API (non-OK status) for dataset ${datasetId}: ${response.status} - ${data.message || 'Unknown error'}`);
             return {
                 statusCode: response.status, // 使用 CWA API 返回的狀態碼
                 headers: {
@@ -68,7 +92,6 @@ exports.handler = async (event) => {
             statusCode: 200, // HTTP OK
             headers: {
                 "Content-Type": "application/json",
-                // 允許所有來源進行 CORS 訪問，因為這是代理函數。
                 "Access-Control-Allow-Origin": "*",
             },
             body: JSON.stringify(data), // 將 CWA API 的 JSON 資料直接傳回
