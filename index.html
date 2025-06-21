@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>氣象資料儀表板</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+            color: #334155;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            padding: 1rem;
+        }
+        .tab-button {
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem 0.5rem 0 0;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            font-weight: 600;
+        }
+        .tab-button.active {
+            background-color: #ffffff;
+            color: #3b82f6;
+            border-bottom: 2px solid #3b82f6;
+        }
+        .tab-button:not(.active):hover {
+            background-color: #e2e8f0;
+        }
+        .tab-content {
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 0 0.5rem 0.5rem 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            min-height: 400px;
+        }
+        .data-card {
+            background-color: #f8fafc;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+        }
+        .data-card h3 {
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+        .spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3b82f6;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error-message {
+            color: #ef4444;
+            font-weight: 500;
+            margin-top: 1rem;
+        }
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+        details > summary {
+            list-style: none; /* Hide default triangle */
+        }
+        details > summary::-webkit-details-marker {
+            display: none; /* Hide default triangle for WebKit */
+        }
+        details > summary::before {
+            content: '▶'; /* Custom arrow */
+            display: inline-block;
+            margin-right: 0.5em;
+            transition: transform 0.2s;
+        }
+        details[open] > summary::before {
+            transform: rotate(90deg);
+        }
+        .table-responsive {
+            overflow-x: auto;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        .data-table th {
+            background-color: #f1f5f9;
+            font-weight: 600;
+            color: #475569;
+        }
+        .data-table tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p class="mt-4 text-lg font-medium text-blue-500">載入中，請稍候...</p>
+    </div>
+
+    <div class="container bg-white shadow-xl rounded-xl p-6 md:p-8">
+        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6 text-gray-800">臺灣氣象資料儀表板</h1>
+
+        <div class="flex flex-wrap justify-center border-b border-gray-200 mb-6 -mx-2">
+            <button class="tab-button active" data-tab="weather">即時天氣與預報</button>
+            <button class="tab-button" data-tab="health">健康氣象</button>
+            <button class="tab-button" data-tab="stations">氣象站資料</button>
+            <button class="tab-button" data-tab="ocean">海象與潮汐</button>
+            <button class="tab-button" data-tab="earthquake">地震資訊</button>
+            <button class="tab-button" data-tab="advisories">天氣特報與颱風</button>
+            <button class="tab-button" data-tab="astronomy">天文資料</button>
+        </div>
+
+        <div id="weather" class="tab-content">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">臺灣各縣市天氣預報</h2>
+            <div id="taiwan-weather" class="data-grid">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">國際都市天氣預報 <span class="text-sm font-normal text-gray-500">(可能依CWA API支援程度提供)</span></h2>
+            <div id="international-weather" class="data-grid">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">現在天氣觀測報告 (自動氣象站資料)</h2>
+            <div id="manned-station-weather" class="table-responsive">載入中...</div>
+        </div>
+
+        <div id="health" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">健康氣象預報</h2>
+            <details class="data-card">
+                <summary class="text-lg font-bold cursor-pointer text-blue-700">溫差提醒指數及警示 (全臺各鄉鎮五日預報)</summary>
+                <div id="temp-diff-index" class="mt-2 table-responsive">載入中...</div>
+            </details>
+            <details class="data-card mt-4">
+                <summary class="text-lg font-bold cursor-pointer text-blue-700">冷傷害指數及警示 (全臺各鄉鎮五日預報)</summary>
+                <div id="cold-injury-index" class="mt-2 table-responsive">載入中...</div>
+            </details>
+            <details class="data-card mt-4">
+                <summary class="text-lg font-bold cursor-pointer text-blue-700">熱傷害分級與綜合溫度熱指數 (數值預報)</summary>
+                <div id="heat-injury-index" class="mt-2 table-responsive">載入中...</div>
+            </details>
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">氣象站每日紫外線指數最大值</h2>
+            <div id="uv-index" class="table-responsive">載入中...</div>
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">臭氧總量觀測資料 (台北)</h2>
+            <div id="ozone-data" class="table-responsive">載入中...</div>
+        </div>
+
+        <div id="stations" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">自動氣象站資料 (無人站)</h2>
+            <div id="unmanned-weather-stations" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">自動雨量站資料 (無人站)</h2>
+            <div id="unmanned-rain-stations" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">地面測站每日雨量資料</h2>
+            <div id="daily-rainfall" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">月平均-地面測站資料</h2>
+            <div id="monthly-avg-stations" class="table-responsive">載入中...</div>
+        </div>
+
+        <div id="ocean" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">未來1個月潮汐預報</h2>
+            <div id="tide-forecast" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">海象監測資料 (30天浮標站與潮位站海況)</h2>
+            <div id="ocean-monitoring" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">海嘯資訊資料</h2>
+            <div id="tsunami-info" class="table-responsive">載入中...</div>
+        </div>
+
+        <div id="earthquake" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">顯著有感地震報告</h2>
+            <div id="significant-earthquakes" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">小區域有感地震報告</h2>
+            <div id="small-earthquakes" class="table-responsive">載入中...</div>
+        </div>
+
+        <div id="advisories" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">天氣特報 (各別縣市地區)</h2>
+            <div id="weather-advisories-county" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">天氣特報 (內容及影響區域)</h2>
+            <div id="weather-advisories-detail" class="table-responsive">載入中...</div>
+
+            <h2 class="text-2xl font-bold mt-8 mb-4 text-gray-700">西北太平洋地區及南海熱帶氣旋資訊</h2>
+            <div id="tropical-cyclones" class="table-responsive">載入中...</div>
+        </div>
+
+        <div id="astronomy" class="tab-content hidden">
+            <h2 class="text-2xl font-bold mb-4 text-gray-700">全臺各縣市月出、月沒及月球過中天時刻</h2>
+            <div id="moon-data" class="table-responsive">載入中...</div>
+        </div>
+
+    </div>
+
+    <script>
+        // 注意：API 金鑰已從前端移除，由 Netlify Function 安全地處理。
+        // 請確保您的 Netlify 環境變數 CWA_API_KEY 已正確設定。
+
+        // 定義 Netlify 無伺服器函數的基礎路徑
+        // 當部署到 Netlify 後，這個路徑會自動指向您的函數
+        const NETLIFY_FUNCTION_BASE_URL = "/.netlify/functions/cwa-proxy";
+
+        // 載入顯示/隱藏函數
+        function showLoading() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        // 輔助函數：顯示錯誤訊息
+        function displayError(elementId, message, isProxyError = false) {
+            const element = document.getElementById(elementId);
+            let errorMessage = `<p class="error-message">錯誤：${message}`;
+            if (isProxyError) {
+                errorMessage += `<br>此問題可能來自代理函數 (Netlify Function) 或其內部呼叫 CWA API 時發生錯誤。請檢查 Netlify 函數日誌或 CWA API 資料集 ID。`;
+            } else {
+                errorMessage += `<br>請確認網路連線或資料集設定。`;
+            }
+            errorMessage += `</p>`;
+            if (element) {
+                element.innerHTML = errorMessage;
+            }
+        }
+
+        // 輔助函數：將日期時間字串格式化為YYYY-MM-DD HH:MM
+        function formatDateTime(isoString) {
+            if (!isoString) return 'N/A';
+            try {
+                const date = new Date(isoString);
+                if (isNaN(date.getTime())) { // Check for invalid date
+                    return '無效日期';
+                }
+                return date.toLocaleString('zh-TW', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                });
+            } catch (e) {
+                console.error("日期格式化錯誤:", e);
+                return '日期格式錯誤';
+            }
+        }
+
+        // 輔助函數：建構表格
+        function buildTable(headers, data, elementId) {
+            if (!data || data.length === 0) {
+                document.getElementById(elementId).innerHTML = '<p>無資料。</p>';
+                return;
+            }
+
+            let tableHTML = '<table class="data-table"><thead><tr>';
+            headers.forEach(header => {
+                tableHTML += `<th>${header}</th>`;
+            });
+            tableHTML += '</tr></thead><tbody>';
+
+            data.forEach(row => {
+                tableHTML += '<tr>';
+                row.forEach(cell => {
+                    tableHTML += `<td>${cell !== null && cell !== undefined ? cell : 'N/A'}</td>`; // Ensure cells are not null/undefined
+                });
+                tableHTML += '</tr>';
+            });
+            tableHTML += '</tbody></table>';
+            document.getElementById(elementId).innerHTML = tableHTML;
+        }
+
+        /**
+         * 共通的代理請求函數
+         * @param {string} datasetId - 中央氣象署資料集 ID
+         * @param {Object} params - 傳遞給 CWA API 的額外參數
+         */
+        async function fetchViaNetlifyProxy(datasetId, params = {}) {
+            const queryParams = new URLSearchParams(params);
+            queryParams.set('datasetId', datasetId); // 將 datasetId 也作為參數傳遞給 proxy
+
+            const url = `${NETLIFY_FUNCTION_BASE_URL}?${queryParams.toString()}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                // 代理函數返回的錯誤，包含 CWA API 的原始錯誤訊息
+                throw new Error(errorData.error || `Proxy error: ${response.statusText}`);
+            }
+            return response.json();
+        }
+
+
+        /**
+         * 獲取臺灣各縣市天氣預報資料 (F-C0032-001)
+         * 每 5 秒更新
+         */
+        async function fetchTaiwanWeather() {
+            try {
+                const data = await fetchViaNetlifyProxy('F-C0032-001');
+
+                if (data.success === 'true' && data.records?.location) {
+                    let weatherHTML = '';
+                    data.records.location.forEach(loc => {
+                        const city = loc.locationName || 'N/A';
+                        const weatherElements = loc.weatherElement;
+                        let forecast = {};
+
+                        weatherElements.forEach(element => {
+                            const time = element.time?.[0];
+                            if (time?.parameter?.[0]) { // Ensure time and its first parameter exist
+                                const param0 = time.parameter[0];
+                                switch (element.elementName) {
+                                    case 'Wx': // 天氣現象
+                                        forecast.wx = param0.parameterName;
+                                        break;
+                                    case 'MinT': // 最低溫度
+                                        forecast.minT = param0.parameterName;
+                                        break;
+                                    case 'MaxT': // 最高溫度
+                                        forecast.maxT = param0.parameterName;
+                                        break;
+                                    case 'CI': // 舒適度指數
+                                        forecast.ci = param0.parameterName;
+                                        break;
+                                    case 'PoP': // 降雨機率
+                                        forecast.pop = param0.parameterName;
+                                        break;
+                                }
+                            }
+                        });
+
+                        weatherHTML += `
+                            <div class="data-card">
+                                <h3 class="text-xl">${city}</h3>
+                                <p><strong>天氣：</strong>${forecast.wx || 'N/A'}</p>
+                                <p><strong>溫度：</strong>${forecast.minT || 'N/A'}°C ~ ${forecast.maxT || 'N/A'}°C</p>
+                                <p><strong>降雨機率：</strong>${forecast.pop || 'N/A'}%</p>
+                                <p><strong>舒適度：</strong>${forecast.ci || 'N/A'}</p>
+                            </div>
+                        `;
+                    });
+                    document.getElementById('taiwan-weather').innerHTML = weatherHTML;
+                } else {
+                    displayError('taiwan-weather', data.message || '無法獲取臺灣天氣預報資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching Taiwan weather:', error);
+                displayError('taiwan-weather', `獲取臺灣天氣預報資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取國際都市天氣預報 (O-A0003-001)
+         * 注意：CWA提供的國際都市資料可能有限，且更新頻率與格式不同於台灣預報。
+         * 此處僅提供觀測資料，而非預報。
+         * 每 5 秒更新
+         */
+        async function fetchInternationalWeather() {
+            try {
+                const data = await fetchViaNetlifyProxy('O-A0003-001');
+
+                if (data.success === 'true' && data.records?.Station) {
+                    let weatherHTML = '';
+                    // 隨機選擇幾個國際城市顯示，因為資料量可能很大
+                    const internationalCities = data.records.Station.filter(s =>
+                        (s.ObsTime?.Station?.Country === '國際') ||
+                        (s.ObsTime?.Station?.StationNameE && s.ObsTime.Station.StationNameE.match(/Taipei|Tokyo|London|New York|Paris|Seoul|Beijing|Shanghai/i))
+                    );
+
+                    if (internationalCities.length === 0) {
+                        weatherHTML = '<p>CWA API目前未提供足夠的國際都市天氣資料或您查詢的城市不在清單中。</p>';
+                    } else {
+                        internationalCities.slice(0, 10).forEach(station => { // 顯示前10個匹配的城市
+                            const cityName = station.ObsTime?.Station?.StationName || 'N/A';
+                            const temp = station.WeatherElement?.AirTemperature;
+                            const humidity = station.WeatherElement?.RelativeHumidity;
+                            const windSpeed = station.WeatherElement?.WindSpeed;
+                            const pressure = station.WeatherElement?.AtmosphericPressure;
+                            const obsTime = formatDateTime(station.ObsTime?.DateTime);
+
+                            weatherHTML += `
+                                <div class="data-card">
+                                    <h3 class="text-xl">${cityName}</h3>
+                                    <p><strong>觀測時間：</strong>${obsTime}</p>
+                                    <p><strong>溫度：</strong>${temp !== '-99' && temp !== null && temp !== undefined ? temp : 'N/A'}°C</p>
+                                    <p><strong>濕度：</strong>${humidity !== '-99' && humidity !== null && humidity !== undefined ? (humidity * 100).toFixed(1) : 'N/A'}%</p>
+                                    <p><strong>風速：</strong>${windSpeed !== '-99' && windSpeed !== null && windSpeed !== undefined ? windSpeed : 'N/A'} m/s</p>
+                                    <p><strong>氣壓：</strong>${pressure !== '-99' && pressure !== null && pressure !== undefined ? pressure : 'N/A'} hPa</p>
+                                </div>
+                            `;
+                        });
+                    }
+                    document.getElementById('international-weather').innerHTML = weatherHTML;
+                } else {
+                    displayError('international-weather', data.message || '無法獲取國際都市天氣資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching international weather:', error);
+                displayError('international-weather', `獲取國際都市天氣資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取現在天氣觀測報告 (O-A0001-001)
+         * 平台名稱： 自動氣象站-氣象觀測資料 (此ID確實為有人站觀測資料，描述已修正)
+         */
+        async function fetchMannedStationWeather() {
+            try {
+                const data = await fetchViaNetlifyProxy('O-A0001-001');
+
+                if (data.success === 'true' && data.records?.Station) {
+                    const stations = data.records.Station;
+                    const headers = ['站點名稱', '觀測時間', '溫度 (°C)', '濕度 (%)', '風速 (m/s)', '氣壓 (hPa)', '日累積雨量 (mm)'];
+                    const tableData = stations.map(station => {
+                        const airTemperature = station.WeatherElement?.AirTemperature;
+                        const relativeHumidity = station.WeatherElement?.RelativeHumidity;
+                        const windSpeed = station.WeatherElement?.WindSpeed;
+                        const atmosphericPressure = station.WeatherElement?.AtmosphericPressure;
+                        const dailyRainfall = station.WeatherElement?.DailyRainfall;
+
+                        return [
+                            station.StationName || 'N/A',
+                            formatDateTime(station.ObsTime?.DateTime),
+                            (airTemperature !== '-99' && airTemperature !== null && airTemperature !== undefined) ? airTemperature : 'N/A',
+                            (relativeHumidity !== '-99' && relativeHumidity !== null && relativeHumidity !== undefined) ? (relativeHumidity * 100).toFixed(1) : 'N/A',
+                            (windSpeed !== '-99' && windSpeed !== null && windSpeed !== undefined) ? windSpeed : 'N/A',
+                            (atmosphericPressure !== '-99' && atmosphericPressure !== null && atmosphericPressure !== undefined) ? atmosphericPressure : 'N/A',
+                            (dailyRainfall !== '-99' && dailyRainfall !== null && dailyRainfall !== undefined) ? dailyRainfall : 'N/A'
+                        ];
+                    });
+                    buildTable(headers, tableData, 'manned-station-weather');
+                } else {
+                    displayError('manned-station-weather', data.message || '無法獲取有人氣象站資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching manned station weather:', error);
+                displayError('manned-station-weather', `獲取有人氣象站資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取未來1個月潮汐預報 (F-A0021-001)
+         * 更新：原 M-A0001-001 應為 F-A0021-001 (潮汐預報-未來1 個月潮汐預報)
+         */
+        async function fetchTideForecast() {
+            try {
+                const data = await fetchViaNetlifyProxy('F-A0021-001');
+
+                if (data.success === 'true' && data.records?.TideForecast) { // Note: Data structure for F-A0021-001 is different from M-A0001-001
+                    const tideData = data.records.TideForecast;
+                    const headers = ['測站名稱', '預報時間', '潮高 (cm)', '潮汐類型'];
+                    const tableData = [];
+
+                    tideData.forEach(station => {
+                        const stationName = station.StationName || 'N/A';
+                        if (station.TideValues?.TideValue) {
+                            station.TideValues.TideValue.forEach(tv => {
+                                tableData.push([
+                                    stationName,
+                                    formatDateTime(tv.DateTime),
+                                    tv.TideHeight !== null && tv.TideHeight !== undefined ? tv.TideHeight : 'N/A',
+                                    tv.TideType || 'N/A'
+                                ]);
+                            });
+                        }
+                    });
+                    buildTable(headers, tableData, 'tide-forecast');
+                } else {
+                    displayError('tide-forecast', data.message || '無法獲取潮汐預報資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching tide forecast:', error);
+                displayError('tide-forecast', `獲取潮汐預報資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取健康氣象溫差提醒指數及警示 (F-A0085-003)
+         * 更新：原 F-C0032-005 應為 F-A0085-003 (健康氣象-溫差提醒指數及警示)
+         */
+        async function fetchTempDiffIndex() {
+            try {
+                const data = await fetchViaNetlifyProxy('F-A0085-003');
+
+                if (data.success === 'true' && data.records?.data) { // Structure for F-A0085-003 might be records.data
+                    const forecastData = data.records.data;
+                    const headers = ['地區', '時間', '溫差提醒指數', '說明'];
+                    const tableData = [];
+
+                    forecastData.forEach(item => {
+                        const locationName = item.locationName || 'N/A';
+                        item.time?.forEach(time => {
+                            const temperatureDifferenceRisk = time.TemperatureDifferenceRisk;
+                            const description = time.description;
+                            tableData.push([
+                                locationName,
+                                `${formatDateTime(time.dataTime)}`, // F-A0085-003 uses dataTime
+                                temperatureDifferenceRisk || 'N/A',
+                                description || 'N/A'
+                            ]);
+                        });
+                    });
+                    buildTable(headers, tableData, 'temp-diff-index');
+                } else {
+                    displayError('temp-diff-index', data.message || '無法獲取溫差提醒指數資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching temperature difference index:', error);
+                displayError('temp-diff-index', `獲取溫差提醒指數資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取健康氣象冷傷害指數及警示 (F-A0085-002)
+         * 更新：原 F-C0032-004 應為 F-A0085-002 (健康氣象-冷傷害指數及警示)
+         */
+        async function fetchColdInjuryIndex() {
+            try {
+                const data = await fetchViaNetlifyProxy('F-A0085-002');
+
+                if (data.success === 'true' && data.records?.data) { // Structure for F-A0085-002 might be records.data
+                    const forecastData = data.records.data;
+                    const headers = ['地區', '時間', '冷傷害指數', '說明'];
+                    const tableData = [];
+
+                    forecastData.forEach(item => {
+                        const locationName = item.locationName || 'N/A';
+                        item.time?.forEach(time => {
+                            const coldHazard = time.ColdHazard;
+                            const description = time.description;
+                            tableData.push([
+                                locationName,
+                                `${formatDateTime(time.dataTime)}`, // F-A0085-002 uses dataTime
+                                coldHazard || 'N/A',
+                                description || 'N/A'
+                            ]);
+                        });
+                    });
+                    buildTable(headers, tableData, 'cold-injury-index');
+                } else {
+                    displayError('cold-injury-index', data.message || '無法獲取冷傷害指數資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching cold injury index:', error);
+                displayError('cold-injury-index', `獲取冷傷害指數資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取健康氣象相關數值預報資料 (M-A0085-001)
+         * 更新：原 F-C0032-006 應為 M-A0085-001 (健康氣象-熱傷害指數及警示)
+         */
+        async function fetchHeatInjuryIndex() {
+            try {
+                const data = await fetchViaNetlifyProxy('M-A0085-001');
+
+                if (data.success === 'true' && data.records?.Station) { // M-A0085-001 structure seems to be records.Station
+                    const forecastData = data.records.Station;
+                    const headers = ['測站名稱', '觀測時間', '熱傷害分級', '綜合溫度熱指數(WBGT)']; // Description might not be directly available for this one
+                    const tableData = [];
+
+                    forecastData.forEach(station => {
+                        const stationName = station.StationName || 'N/A';
+                        station.WeatherElement?.forEach(element => {
+                            if (element.elementName === 'HeatHazard') { // Assuming 'HeatHazard' contains the relevant info
+                                element.Time?.forEach(time => {
+                                    const heatStrokeRisk = time.HeatStrokeRisk;
+                                    const wbgt = time.WBGT;
+                                    tableData.push([
+                                        stationName,
+                                        formatDateTime(time.DateTime),
+                                        heatStrokeRisk || 'N/A',
+                                        wbgt || 'N/A'
+                                    ]);
+                                });
+                            }
+                        });
+                    });
+                    buildTable(headers, tableData, 'heat-injury-index');
+                } else {
+                    displayError('heat-injury-index', data.message || '無法獲取熱傷害指數資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching heat injury index:', error);
+                displayError('heat-injury-index', `獲取熱傷害指數資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取自動氣象站資料 (O-A0002-001)
+         * 平台名稱：自動氣象站-氣象觀測資料 (無人站)
+         */
+        async function fetchUnmannedWeatherStations() {
+            try {
+                const data = await fetchViaNetlifyProxy('O-A0002-001');
+
+                if (data.success === 'true' && data.records?.Station) {
+                    const stations = data.records.Station;
+                    const headers = ['站點名稱', '觀測時間', '溫度 (°C)', '濕度 (%)', '風速 (m/s)', '風向', '氣壓 (hPa)'];
+                    const tableData = stations.map(station => {
+                        const airTemperature = station.WeatherElement?.AirTemperature;
+                        const relativeHumidity = station.WeatherElement?.RelativeHumidity;
+                        const windSpeed = station.WeatherElement?.WindSpeed;
+                        const windDirection = station.WeatherElement?.WindDirection;
+                        const atmosphericPressure = station.WeatherElement?.AtmosphericPressure;
+
+                        return [
+                            station.StationName || 'N/A',
+                            formatDateTime(station.ObsTime?.DateTime),
+                            (airTemperature !== '-99' && airTemperature !== null && airTemperature !== undefined) ? airTemperature : 'N/A',
+                            (relativeHumidity !== '-99' && relativeHumidity !== null && relativeHumidity !== undefined) ? (relativeHumidity * 100).toFixed(1) : 'N/A',
+                            (windSpeed !== '-99' && windSpeed !== null && windSpeed !== undefined) ? windSpeed : 'N/A',
+                            (windDirection !== '-99' && windDirection !== null && windDirection !== undefined) ? windDirection : 'N/A',
+                            (atmosphericPressure !== '-99' && atmosphericPressure !== null && atmosphericPressure !== undefined) ? atmosphericPressure : 'N/A'
+                        ];
+                    });
+                    buildTable(headers, tableData, 'unmanned-weather-stations');
+                } else {
+                    displayError('unmanned-weather-stations', data.message || '無法獲取無人自動站氣象資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching unmanned weather stations:', error);
+                displayError('unmanned-weather-stations', `獲取無人自動站氣象資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取自動雨量站資料 (O-A0002-002)
+         * 平台名稱：自動雨量站-過去1 小時雨量觀測資料 (無人站)
+         */
+        async function fetchUnmannedRainStations() {
+            try {
+                const data = await fetchViaNetlifyProxy('O-A0002-002');
+
+                if (data.success === 'true' && data.records?.Station) {
+                    const stations = data.records.Station;
+                    const headers = ['站點名稱', '觀測時間', '小時雨量 (mm)', '日累積雨量 (mm)'];
+                    const tableData = stations.map(station => {
+                        const hourRainfall = station.WeatherElement?.HourRainfall;
+                        const dailyRainfall = station.WeatherElement?.DailyRainfall;
+                        return [
+                            station.StationName || 'N/A',
+                            formatDateTime(station.ObsTime?.DateTime),
+                            (hourRainfall !== '-99' && hourRainfall !== null && hourRainfall !== undefined) ? hourRainfall : 'N/A',
+                            (dailyRainfall !== '-99' && dailyRainfall !== null && dailyRainfall !== undefined) ? dailyRainfall : 'N/A'
+                        ];
+                    });
+                    buildTable(headers, tableData, 'unmanned-rain-stations');
+                } else {
+                    displayError('unmanned-rain-stations', data.message || '無法獲取無人自動站雨量資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching unmanned rain stations:', error);
+                displayError('unmanned-rain-stations', `獲取無人自動站雨量資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取氣象站每日紫外線指數最大值 (O-A0005-001)
+         */
+        async function fetchUvIndex() {
+            try {
+                const data = await fetchViaNetlifyProxy('O-A0005-001');
+
+                if (data.success === 'true' && data.records?.Station) {
+                    const stations = data.records.Station;
+                    const headers = ['測站名稱', '觀測時間', '紫外線指數', '指數等級'];
+                    const tableData = stations.map(station => {
+                        const uvi = station.WeatherElement?.UVI;
+                        const uviRisk = station.WeatherElement?.UVI_Risk;
+                        return [
+                            station.StationName || 'N/A',
+                            formatDateTime(station.ObsTime?.DateTime),
+                            (uvi !== '-99' && uvi !== null && uvi !== undefined) ? uvi : 'N/A',
+                            (uviRisk === 'null' || uviRisk === null || uviRisk === undefined) ? 'N/A' : uviRisk
+                        ];
+                    });
+                    buildTable(headers, tableData, 'uv-index');
+                } else {
+                    displayError('uv-index', data.message || '無法獲取紫外線指數資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching UV index:', error);
+                displayError('uv-index', `獲取紫外線指數資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取臭氧總量觀測資料 (O-A0006-002)
+         * 更新：原 O-A0004-001 應為 O-A0006-002 (臭氧總量觀測資料-台北站)
+         */
+        async function fetchOzoneData() {
+            try {
+                const data = await fetchViaNetlifyProxy('O-A0006-002');
+
+                if (data.success === 'true' && data.records?.Station) {
+                    const taipeiOzone = data.records.Station.filter(s => s.StationName?.includes('台北'));
+                    if (taipeiOzone.length > 0) {
+                        const headers = ['測站名稱', '觀測時間', '臭氧總量 (Dobsons)', '臭氧濃度 (ppm)'];
+                        const tableData = taipeiOzone.map(station => {
+                            const totalOzone = station.WeatherElement?.TotalOzone;
+                            const ozoneConcentration = station.WeatherElement?.OzoneConcentration;
+                            return [
+                                station.StationName || 'N/A',
+                                formatDateTime(station.ObsTime?.DateTime),
+                                (totalOzone !== '-99' && totalOzone !== null && totalOzone !== undefined) ? totalOzone : 'N/A',
+                                (ozoneConcentration !== '-99' && ozoneConcentration !== null && ozoneConcentration !== undefined) ? ozoneConcentration : 'N/A'
+                            ];
+                        });
+                        buildTable(headers, tableData, 'ozone-data');
+                    } else {
+                        document.getElementById('ozone-data').innerHTML = '<p>未找到台北的臭氧總量觀測資料。</p>';
+                    }
+                } else {
+                    displayError('ozone-data', data.message || '無法獲取臭氧總量觀測資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching ozone data:', error);
+                displayError('ozone-data', `獲取臭氧總量觀測資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取海象監測資料 (O-B0075-002)
+         * 更新：原 O-A0021-001 應為 O-B0075-002 (海象監測資料-30天浮標站與潮位站海況監測資料)
+         */
+        async function fetchOceanMonitoring() {
+            try {
+                const data = await fetchViaNetlifyProxy('O-B0075-002');
+
+                if (data.success === 'true' && data.records?.Station) { // Structure for O-B0075-002 is records.Station
+                    const oceanData = data.records.Station;
+                    const headers = ['測站名稱', '觀測時間', '波高 (m)', '波週期 (s)', '水溫 (°C)', '潮位 (cm)'];
+                    const tableData = oceanData.map(station => {
+                        const waveHeight = station.WeatherElement?.WaveHeight;
+                        const wavePeriod = station.WeatherElement?.WavePeriod;
+                        const waterTemperature = station.WeatherElement?.WaterTemperature;
+                        const tideLevel = station.WeatherElement?.TideLevel; // Note: This might be from潮位站
+
+                        return [
+                            station.StationName || 'N/A',
+                            formatDateTime(station.ObsTime?.DateTime),
+                            (waveHeight !== '-999' && waveHeight !== null && waveHeight !== undefined) ? waveHeight : 'N/A',
+                            (wavePeriod !== '-999' && wavePeriod !== null && wavePeriod !== undefined) ? wavePeriod : 'N/A',
+                            (waterTemperature !== '-999' && waterTemperature !== null && waterTemperature !== undefined) ? waterTemperature : 'N/A',
+                            (tideLevel !== '-999' && tideLevel !== null && tideLevel !== undefined) ? tideLevel : 'N/A'
+                        ];
+                    });
+                    buildTable(headers, tableData, 'ocean-monitoring');
+                } else {
+                    displayError('ocean-monitoring', data.message || '無法獲取海象監測資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching ocean monitoring data:', error);
+                displayError('ocean-monitoring', `獲取海象監測資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取海嘯資訊資料 (E-A0014-001)
+         * 更新：原 E-A0016-001 應為 E-A0014-001 (海嘯資訊資料-海嘯資訊資料)
+         */
+        async function fetchTsunamiInfo() {
+            try {
+                const data = await fetchViaNetlifyProxy('E-A0014-001');
+
+                if (data.success === 'true' && data.records?.TsunamiWarning) { // E-A0014-001 structure seems to be records.TsunamiWarning
+                    const tsunamiData = data.records.TsunamiWarning;
+                    if (tsunamiData.length > 0) {
+                        const headers = ['發布時間', '報告內容'];
+                        const tableData = tsunamiData.map(tsunami => [
+                            formatDateTime(tsunami.IssuedTime), // IssuedTime for E-A0014-001
+                            tsunami.Content || 'N/A' // Content for E-A0014-001
+                        ]);
+                        buildTable(headers, tableData, 'tsunami-info');
+                    } else {
+                        document.getElementById('tsunami-info').innerHTML = '<p>目前無海嘯資訊資料。</p>';
+                    }
+                } else {
+                    displayError('tsunami-info', data.message || '無法獲取海嘯資訊資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching tsunami info:', error);
+                displayError('tsunami-info', `獲取海嘯資訊資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取顯著有感地震報告 (E-A0015-001)
+         */
+        async function fetchSignificantEarthquakes() {
+            try {
+                const data = await fetchViaNetlifyProxy('E-A0015-001');
+
+                if (data.success === 'true' && data.records?.Earthquake) {
+                    const earthquakes = data.records.Earthquake;
+                    if (earthquakes.length > 0) {
+                        const headers = ['發布時間', '地震規模', '震央位置', '深度 (km)', '最大震度地區'];
+                        const tableData = earthquakes.map(eq => [
+                            formatDateTime(eq.ReportTime),
+                            eq.EarthquakeInfo?.EarthquakeMagnitude?.MagnitudeValue || 'N/A',
+                            eq.EarthquakeInfo?.Epicenter?.Location || 'N/A',
+                            eq.EarthquakeInfo?.FocalDepth || 'N/A',
+                            eq.Intensity?.ShakingArea?.[0]?.AreaDesc || 'N/A'
+                        ]);
+                        buildTable(headers, tableData, 'significant-earthquakes');
+                    } else {
+                        document.getElementById('significant-earthquakes').innerHTML = '<p>目前無顯著有感地震報告。</p>';
+                    }
+                } else {
+                    displayError('significant-earthquakes', data.message || '無法獲取顯著有感地震報告，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching significant earthquakes:', error);
+                displayError('significant-earthquakes', `獲取顯著有感地震報告失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取小區域有感地震報告 (E-A0015-002)
+         */
+        async function fetchSmallEarthquakes() {
+            try {
+                const data = await fetchViaNetlifyProxy('E-A0015-002');
+
+                if (data.success === 'true' && data.records?.Earthquake) {
+                    const earthquakes = data.records.Earthquake;
+                    if (earthquakes.length > 0) {
+                        const headers = ['發布時間', '地震規模', '震央位置', '深度 (km)'];
+                        const tableData = earthquakes.map(eq => [
+                            formatDateTime(eq.ReportTime),
+                            eq.EarthquakeInfo?.EarthquakeMagnitude?.MagnitudeValue || 'N/A',
+                            eq.EarthquakeInfo?.Epicenter?.Location || 'N/A',
+                            eq.EarthquakeInfo?.FocalDepth || 'N/A'
+                        ]);
+                        buildTable(headers, tableData, 'small-earthquakes');
+                    } else {
+                        document.getElementById('small-earthquakes').innerHTML = '<p>目前無小區域有感地震報告。</p>';
+                    }
+                } else {
+                    displayError('small-earthquakes', data.message || '無法獲取小區域有感地震報告，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching small earthquakes:', error);
+                displayError('small-earthquakes', `獲取小區域有感地震報告失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取地面測站每日雨量資料 (C-B0025-001)
+         * 更新：原 O-A0002-003 應為 C-B0025-001 (地面測站每日雨量資料)
+         */
+        async function fetchDailyRainfall() {
+            try {
+                const data = await fetchViaNetlifyProxy('C-B0025-001');
+
+                if (data.success === 'true' && data.records?.data) { // C-B0025-001 structure seems to be records.data
+                    const rainfallData = data.records.data;
+                    const headers = ['站點名稱', '觀測時間', '日累積雨量 (mm)'];
+                    const tableData = rainfallData.map(item => {
+                        return [
+                            item.StationName || 'N/A',
+                            formatDateTime(item.ObsTime),
+                            item.DailyRainfall !== null && item.DailyRainfall !== undefined ? item.DailyRainfall : 'N/A'
+                        ];
+                    });
+                    buildTable(headers, tableData, 'daily-rainfall');
+                } else {
+                    displayError('daily-rainfall', data.message || '無法獲取地面測站每日雨量資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching daily rainfall:', error);
+                displayError('daily-rainfall', `獲取地面測站每日雨量資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取月平均-地面測站資料 (A-A0002-001)
+         * 註解：A-A0002-001 為「歷史氣象資料查詢」API。此處透過設定時間範圍來模擬獲取月平均資料。
+         * 此API回傳的是原始觀測資料，需要前端自行計算平均值或總和。
+         * 為了簡化，目前僅抓取資料並呈現部分可用元素。
+         */
+        async function fetchMonthlyAvgStations() {
+            // 獲取上一個月的年份和月份
+            const today = new Date();
+            const lastMonth = new Date(today.setMonth(today.getMonth() - 1));
+            const year = lastMonth.getFullYear();
+            const month = (lastMonth.getMonth() + 1).toString().padStart(2, '0');
+            const day = new Date(year, month, 0).getDate(); // 獲取該月的天數
+
+            // 參數傳遞給 proxy，proxy 會再傳給 CWA API
+            const params = {
+                format: 'JSON',
+                timeFrom: `${year}-${month}-01`,
+                timeTo: `${year}-${month}-${day}`
+            };
+
+            try {
+                const data = await fetchViaNetlifyProxy('A-A0002-001', params);
+
+                if (data.success === 'true' && data.records?.location) {
+                    const monthlyData = data.records.location;
+                    const headers = [`月份 (${year}-${month})`, '測站名稱', '月平均氣溫 (°C)', '月總降水 (mm)'];
+                    const tableData = [];
+
+                    monthlyData.forEach(loc => {
+                        const stationName = loc.stationName || 'N/A';
+                        let sumTemp = 0;
+                        let countTemp = 0;
+                        let sumRain = 0;
+
+                        loc.weatherElement?.forEach(element => {
+                            element.time?.forEach(time => {
+                                if (element.elementName === 'TEMP' && time.elementValue?.value !== '-99' && time.elementValue?.value !== null) {
+                                    sumTemp += parseFloat(time.elementValue.value);
+                                    countTemp++;
+                                }
+                                if (element.elementName === 'Precipitation' && time.elementValue?.value !== '-99' && time.elementValue?.value !== null) {
+                                    sumRain += parseFloat(time.elementValue.value);
+                                }
+                            });
+                        });
+
+                        const monthlyTemp = countTemp > 0 ? (sumTemp / countTemp).toFixed(1) : 'N/A';
+                        const monthlyRain = sumRain.toFixed(1);
+
+                        tableData.push([
+                            `${year}-${month}`,
+                            stationName,
+                            monthlyTemp,
+                            monthlyRain
+                        ]);
+                    });
+                    buildTable(headers, tableData, 'monthly-avg-stations');
+                } else {
+                    displayError('monthly-avg-stations', data.message || '無法獲取月平均地面測站資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching monthly avg stations:', error);
+                displayError('monthly-avg-stations', `獲取月平均地面測站資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取天氣特報 - 各別縣市地區目前之天氣警特報情形 (W-C0058-003)
+         * 更新：原 W-C0058-001 應為 W-C0058-003 (縣市特殊天氣警報)
+         */
+        async function fetchWeatherAdvisoriesCounty() {
+            try {
+                const data = await fetchViaNetlifyProxy('W-C0058-003');
+
+                if (data.success === 'true' && data.records?.SpecialWeatherWarning) { // W-C0058-003 structure is records.SpecialWeatherWarning
+                    const advisories = data.records.SpecialWeatherWarning;
+                    if (advisories.length > 0) {
+                        const headers = ['縣市', '發布時間', '特報類型', '內容'];
+                        const tableData = advisories.map(adv => [
+                            adv.Location || 'N/A',
+                            formatDateTime(adv.IssuedTime),
+                            adv.WarningType || 'N/A',
+                            adv.WarningContent || 'N/A'
+                        ]);
+                        buildTable(headers, tableData, 'weather-advisories-county');
+                    } else {
+                        document.getElementById('weather-advisories-county').innerHTML = '<p>目前無天氣警特報。</p>';
+                    }
+                } else {
+                    displayError('weather-advisories-county', data.message || '無法獲取縣市天氣特報資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching weather advisories (county):', error);
+                displayError('weather-advisories-county', `獲取縣市天氣特報資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取天氣特報 - 各別天氣警特報之內容及所影響之區域 (W-C0033-002)
+         * 更新：原 W-C0058-002 應為 W-C0033-002 (天氣特報-特報內容)
+         */
+        async function fetchWeatherAdvisoriesDetail() {
+            try {
+                const data = await fetchViaNetlifyProxy('W-C0033-002');
+
+                if (data.success === 'true' && data.records?.contents) { // W-C0033-002 structure is records.contents
+                    const advisories = data.records.contents;
+                    if (advisories.length > 0) {
+                        const headers = ['發布時間', '特報類型', '內容'];
+                        const tableData = advisories.map(adv => [
+                            formatDateTime(adv.sent),
+                            adv.eventType || 'N/A',
+                            adv.description || 'N/A' // No explicit impact area in this dataset directly
+                        ]);
+                        buildTable(headers, tableData, 'weather-advisories-detail');
+                    } else {
+                        document.getElementById('weather-advisories-detail').innerHTML = '<p>目前無天氣警特報內容。</p>';
+                    }
+                } else {
+                    displayError('weather-advisories-detail', data.message || '無法獲取天氣特報內容資料，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching weather advisories (detail):', error);
+                displayError('weather-advisories-detail', `獲取天氣特報內容資料失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取西北太平洋地區及南海目前所有活動中熱帶氣旋之資訊 (W-C0034-005)
+         * 更新：原 W-C0028-001 應為 W-C0034-005 (颱風消息與警報-熱帶氣旋路徑)
+         */
+        async function fetchTropicalCyclones() {
+            try {
+                const data = await fetchViaNetlifyProxy('W-C0034-005');
+
+                if (data.success === 'true' && data.records?.tropical_cyclone) { // W-C0034-005 structure is records.tropical_cyclone
+                    const cyclones = data.records.tropical_cyclone;
+                    if (cyclones.length > 0) {
+                        const headers = ['名稱', '類別', '發布時間', '最新位置 (度)', '最大風速 (m/s)'];
+                        const tableData = cyclones.map(cyc => [
+                            cyc.TCName || 'N/A',
+                            cyc.TCType || 'N/A',
+                            formatDateTime(cyc.ReportTime),
+                            `緯度: ${cyc.Location?.Lat || 'N/A'}, 經度: ${cyc.Location?.Lon || 'N/A'}`,
+                            cyc.WindSpeed || 'N/A'
+                        ]);
+                        buildTable(headers, tableData, 'tropical-cyclones');
+                    } else {
+                        document.getElementById('tropical-cyclones').innerHTML = '<p>目前無活動中熱帶氣旋資訊。</p>';
+                    }
+                } else {
+                    displayError('tropical-cyclones', data.message || '無法獲取熱帶氣旋資訊，資料格式不符預期。', true);
+                }
+            } catch (error) {
+                console.error('Error fetching tropical cyclones:', error);
+                displayError('tropical-cyclones', `獲取熱帶氣旋資訊失敗: ${error.message || error}`, true);
+            }
+        }
+
+        /**
+         * 獲取全臺各縣市每天的月出、月沒及月球過中天等時刻資料 (A-A0018-001)
+         * 註解：此ID確實為「日出日沒月出月沒時刻」資料集。
+         */
+        async function fetchMoonData() {
+            // 查詢今天的月出月沒時間
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = (today.getMonth() + 1).toString().padStart(2, '0');
+            const day = today.getDate().toString().padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+
+            // 查詢幾個主要城市或隨機取幾個地點
+            const locations = [
+                { name: '臺北', Lon: 121.5654, Lat: 25.0330 },
+                { name: '臺南', Lon: 120.2017, Lat: 22.9908 },
+                { name: '高雄', Lon: 120.3014, Lat: 22.6394 },
+                { name: '花蓮', Lon: 121.6067, Lat: 23.9739 }
+            ];
+
+            let tableDataPromises = locations.map(async loc => {
+                // 將 locationName 和 time 參數傳遞給 Netlify 代理
+                const params = {
+                    locationName: encodeURIComponent(loc.name),
+                    time: dateStr
+                };
+                try {
+                    const data = await fetchViaNetlifyProxy('A-A0018-001', params);
+
+                    if (data.success === 'true' && data.records?.locations?.[0]?.location?.[0]?.time?.[0]) {
+                        const moonInfo = data.records.locations[0].location[0].time[0]; // 只取第一天的資料
+                        return [
+                            loc.name || 'N/A',
+                            dateStr,
+                            moonInfo.moonrise?.Time || 'N/A',
+                            moonInfo.moonrise?.Azimuth || 'N/A',
+                            moonInfo.moonTransit?.Time || 'N/A',
+                            moonInfo.moonTransit?.Elevation || 'N/A',
+                            moonInfo.moonset?.Time || 'N/A',
+                            moonInfo.moonset?.Azimuth || 'N/A'
+                        ];
+                    }
+                } catch (error) {
+                    console.error(`Error fetching moon data for ${loc.name}:`, error);
+                    displayError('moon-data', `獲取月出月沒資料失敗(${loc.name}): ${error.message || error}`, true);
+                    return null;
+                }
+            });
+
+            const results = (await Promise.all(tableDataPromises)).filter(Boolean); // Filter out nulls
+            if (results.length > 0) {
+                const headers = ['城市', '日期', '月出時間', '月出方位', '月過中天時間', '月過中天仰角', '月沒時間', '月沒方位'];
+                buildTable(headers, results, 'moon-data');
+            } else {
+                displayError('moon-data', '無法獲取月出月沒及月球過中天資料。請確認API金鑰是否正確、網路狀況良好，或稍後再試。這可能是由於API端點無效或CORS問題。', true);
+            }
+        }
+
+        // 啟動所有資料抓取
+        async function fetchAllData() {
+            showLoading();
+            try {
+                // 每5秒更新的資料 (天氣預報)
+                const weatherPromises = [
+                    fetchTaiwanWeather(),
+                    fetchInternationalWeather()
+                ];
+                await Promise.all(weatherPromises); // Use Promise.all here as these are frequently updated and critical
+
+                // 只在初始載入時抓取的資料
+                const otherDataPromises = [
+                    fetchMannedStationWeather(),
+                    fetchTideForecast(),
+                    fetchTempDiffIndex(),
+                    fetchColdInjuryIndex(),
+                    fetchHeatInjuryIndex(),
+                    fetchUnmannedWeatherStations(),
+                    fetchUnmannedRainStations(),
+                    fetchUvIndex(),
+                    fetchOzoneData(),
+                    fetchOceanMonitoring(),
+                    fetchTsunamiInfo(),
+                    fetchSignificantEarthquakes(),
+                    fetchSmallEarthquakes(),
+                    fetchDailyRainfall(),
+                    fetchMonthlyAvgStations(),
+                    fetchWeatherAdvisoriesCounty(),
+                    fetchWeatherAdvisoriesDetail(),
+                    fetchTropicalCyclones(),
+                    fetchMoonData()
+                ];
+                // Use Promise.allSettled to ensure all promises are tried even if some fail
+                const results = await Promise.allSettled(otherDataPromises);
+
+                // Optional: Log reasons for rejected promises for debugging
+                results.forEach((result, index) => {
+                    if (result.status === 'rejected') {
+                        console.error(`Promise ${index} failed:`, result.reason);
+                    }
+                });
+
+            } catch (error) {
+                console.error("在獲取所有資料時發生未知錯誤：", error);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Tab 切換邏輯
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabButtons = document.querySelectorAll('.tab-button');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            function showTab(tabId) {
+                tabContents.forEach(content => {
+                    if (content.id === tabId) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+                tabButtons.forEach(button => {
+                    if (button.dataset.tab === tabId) {
+                        button.classList.add('active');
+                    } else {
+                        button.classList.remove('active');
+                    }
+                });
+            }
+
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    showTab(button.dataset.tab);
+                });
+            });
+
+            // 初始顯示第一個 Tab
+            showTab('weather');
+            fetchAllData(); // 初始載入所有資料
+
+            // 設定每 5 秒更新臺灣和國際天氣預報
+            setInterval(() => {
+                console.log("每 5 秒更新天氣預報...");
+                fetchTaiwanWeather();
+                fetchInternationalWeather();
+            }, 5000); // 5000 毫秒 = 5 秒
+        });
+    </script>
+</body>
+</html>

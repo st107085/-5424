@@ -1,0 +1,13 @@
+# netlify.toml
+
+[build]
+  # 指定您的靜態網站檔案在哪裡。如果 index.html 在根目錄，就用 "."
+  publish = "."
+  # 指定您的無伺服器函數在哪裡。
+  functions = "netlify/functions"
+
+# 函數的額外設定 (可選，但建議使用 Node.js 18+ 以支援原生的 fetch)
+[functions]
+  node_bundler = "esbuild" # 使用 esbuild 讓函數打包更快速
+  # Netlify 預設通常會使用最新的 LTS Node.js 版本，但您也可以明確指定
+  # 例如：node_version = "18"
